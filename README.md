@@ -1,29 +1,43 @@
-# SCI Mortality Calculator — GitHub Pages
+# SCI Mortality 3-Stage Cascade Calculator
 
 **Cox Proportional Hazards model for SCI mortality risk prediction**
 NSCISC 2021 · 35,631 patients · C-index 0.82 · 85 features
 
-## Live Demo
+## 🌐 Live Calculator
 
-After deployment: `https://<username>.github.io/sci-mortality-calculator/`
+**https://s3644.github.io/SCI-Mortality-3-stages-calculator/**
 
-## Deploy to GitHub Pages
+> Enable GitHub Pages: Settings → Pages → Source: `main` branch, root folder → Save
 
-1. **Create a new GitHub repo** named `sci-mortality-calculator`
-2. **Upload these 2 files** to the repo root:
-   - `index.html`
-   - `cox_model.json`
-3. **Enable GitHub Pages:** Settings → Pages → Source: `main` branch, root folder → Save
-4. Your calculator is live at `https://<username>.github.io/sci-mortality-calculator/`
+## Files
+
+| File | Description |
+|:-----|:------------|
+| `cascade_calculator.html` | **3-stage cascade calculator** (8→17→27 fields with tier toggle) |
+| `index.html` | Single-page bedside calculator (all 27 fields) |
+| `cascade_cox_model.json` | Cox PH coefficients for cascade model |
+| `cox_model.json` | Cox PH coefficients for single-page model |
 
 ## How It Works
 
-- Pure client-side JavaScript — no server needed
-- Cox PH model (C-index 0.82) exported as JSON coefficients
+### Three-Stage Cascade
+```
+Stage 1 (Triage, 8 fields, ~2 min): Age, sex, AIS, neuro level, etiology
+  → 40% cleared as LOW risk
+Stage 2 (Refined, 20 fields, ~5 min): + comorbidities, surgical, residence
+  → 40% stratified
+Stage 3 (Full, 27 fields, ~15 min): + FIM, sphincter, hospital days
+  → 20% get full survival curves + recommendations
+```
+**Weighted average time: ~6 min/patient** (vs. 15 min for full model)
+
+### Technical Details
+- Pure client-side JavaScript — no server, no database, no PHI transmission
+- Cox PH coefficients exported as JSON (5.6 KB)
 - Risk score = Σ(coefᵢ × (featureᵢ − medianᵢ))
-- Probability = 1/(1 + exp(−(intercept + coef_cal × score)))
-- Handles N/A inputs via code-9 unknown flags
-- 27 clinical input fields with N/A toggles
+- Probability = 1/(1 + exp(−(intercept + slope × score)))
+- N/A inputs activate code-9 unknown flags (same as model training)
+- Tier-based clinical recommendations with cited guideline support
 
 ## Author
 
@@ -34,8 +48,9 @@ After deployment: `https://<username>.github.io/sci-mortality-calculator/`
 
 If you use this calculator in research, please cite:
 ```
-Jitpimolmard J. SCI-PReSS Mortality Calculator. 2026.
-https://github.com/jukrapope/sci-mortality-calculator
+Jitpimolmard J. Bridging the SCI Mortality Prediction Gap: A Deployable
+Cox Proportional Hazards Model with Structured Missing-Data Encoding
+and Cascaded Clinical Deployment. 2026.
 ```
 
 ## Disclaimer
