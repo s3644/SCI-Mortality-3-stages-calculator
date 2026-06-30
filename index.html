@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SCI Mortality Calculator | SCI-PReSS</title>
+<meta name="description" content="Spinal Cord Injury Mortality Risk Calculator — Cox PH model, C-index 0.82, NSCISC 2021, 35,631 patients">
+<style>
+:root{--bg:#f0f2f5;--card:#fff;--text:#1a1a2e;--accent:#1976d2;--border:#e0e0e0;--warn:#ff9800;--good:#43a047;--crit:#c62828}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font:14px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--text)}
+.header{background:linear-gradient(135deg,#1a1a2e,#0d47a1);color:#fff;padding:20px;text-align:center}
+.header h1{font-size:1.5em;margin-bottom:2px}
+.header .sub{opacity:.75;font-size:.85em}
+.header .auth{opacity:.55;font-size:.75em;margin-top:4px}
+.header a{color:#90caf9}
+.container{max-width:900px;margin:16px auto;padding:0 12px}
+.card{background:var(--card);border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,.06);padding:16px;margin-bottom:12px}
+.card h2{font-size:1.05em;color:#16213e;margin-bottom:10px;padding-bottom:6px;border-bottom:2px solid #eee}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px}
+.field label{display:block;font-size:.75em;font-weight:600;color:#666;margin-bottom:2px}
+.field input,.field select{width:100%;padding:7px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:.85em}
+.field input:focus,.field select:focus{border-color:var(--accent);outline:none;box-shadow:0 0 0 2px rgba(25,118,210,.12)}
+.field input.na{background:#fff8e1;border-color:var(--warn);color:#999;font-style:italic}
+.na-row{margin-top:3px;font-size:.7em;color:#999}
+.na-row label{cursor:pointer;font-weight:400}
+.btn{background:var(--accent);color:#fff;border:none;padding:10px 24px;border-radius:8px;font-size:.95em;font-weight:600;cursor:pointer;transition:.15s}
+.btn:hover{background:#1565c0}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn-row{display:flex;gap:8px;margin-top:12px}
+.btn-row .btn{flex:1}
+.btn-row .btn.sec{background:#fff;color:var(--accent);border:1.5px solid var(--accent)}
+.btn-row .btn.sec:hover{background:#e3f2fd}
+.results{display:none}
+.results.show{display:block}
+.meter-row{display:flex;align-items:center;gap:12px;margin:12px 0}
+.risk-num{font-size:2.2em;font-weight:700;min-width:80px}
+.meter-wrap{flex:1}
+.meter{height:20px;background:#e0e0e0;border-radius:10px;overflow:hidden}
+.meter-fill{height:100%;border-radius:10px;transition:width .4s}
+.meter-fill.low{background:linear-gradient(90deg,#66bb6a,#43a047)}
+.meter-fill.med{background:linear-gradient(90deg,#ffa726,#fb8c00)}
+.meter-fill.high{background:linear-gradient(90deg,#ef5350,#e53935)}
+.meter-fill.crit{background:linear-gradient(90deg,#b71c1c,#880e4f)}
+.ticks{display:flex;justify-content:space-between;font-size:.65em;color:#999;margin-top:1px}
+.badge{display:inline-block;padding:3px 10px;border-radius:14px;font-size:.8em;font-weight:600}
+.badge.LOW{background:#e8f5e9;color:#2e7d32}
+.badge.MODERATE{background:#fff3e0;color:#e65100}
+.badge.HIGH{background:#fce4ec;color:#c62828}
+.badge.CRITICAL{background:#b71c1c;color:#fff}
+.ci-row{display:flex;gap:10px;margin:8px 0;font-size:.8em}
+.ci-box{padding:8px;background:#f5f5f5;border-radius:6px;flex:1;text-align:center}
+.ci-box .v{font-weight:700;font-size:1.1em}
+.ci-box .l{font-size:.65em;color:#999}
+.warn{padding:10px 12px;border-radius:6px;margin:10px 0;font-size:.8em}
+.warn.w{background:#fff3e0;border-left:3px solid var(--warn)}
+.warn.g{background:#e8f5e9;border-left:3px solid var(--good)}
+.warn.i{background:#e3f2fd;border-left:3px solid var(--accent)}
+.loading{text-align:center;padding:12px;color:#999;font-size:.85em}
+.footer{text-align:center;padding:16px;font-size:.7em;color:#aaa}
+.footer a{color:#90caf9}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>🧬 SCI Mortality Risk Calculator</h1>
+  <div class="sub">SCI-PReSS — Personalized Risk Stratification &amp; Surveillance System</div>
+  <div class="auth">
+    <a href="https://orcid.org/0009-0001-9170-426X" target="_blank" rel="noopener">Jukrapope Jitpimolmard, MD</a> &nbsp;|&nbsp; 
+    NSCISC 2021 (35,631 patients) &nbsp;|&nbsp; Cox PH C-index 0.82 &nbsp;|&nbsp; 85 features
+  </div>
+</div>
+
+<div class="container">
+
+<div class="card">
+  <h2>📋 Patient Data <span style="font-weight:400;font-size:.75em;color:#999">— enter N/A for unknown fields</span></h2>
+  <div class="grid" id="fields"></div>
+  <div class="btn-row">
+    <button class="btn" onclick="compute()" id="goBtn">🔍 Calculate Risk</button>
+    <button class="btn sec" onclick="clearAll()">↺ Clear</button>
+  </div>
+  <div class="loading" id="loading" style="display:none">Computing risk score from 85 features...</div>
+</div>
+
+<div class="card results" id="results">
+  <h2>📊 Prediction</h2>
+  <div class="meter-row">
+    <div class="risk-num" id="rNum">—</div>
+    <div class="meter-wrap">
+      <div class="meter"><div class="meter-fill" id="mFill" style="width:0%"></div></div>
+      <div class="ticks"><span>0%</span><span>25%</span><span>50%</span><span>75%</span><span>100%</span></div>
+    </div>
+    <div id="rBadge"></div>
+  </div>
+  <div class="ci-row">
+    <div class="ci-box"><div class="l">Mortality Risk</div><div class="v" id="cRisk">—</div></div>
+    <div class="ci-box"><div class="l">Fields Known</div><div class="v" id="cFields">—</div></div>
+    <div class="ci-box"><div class="l">Model</div><div class="v" id="cModel">—</div></div>
+  </div>
+  <div id="warnBox"></div>
+  <div id="recBox"></div>
+</div>
+
+<div class="card">
+  <details>
+    <summary style="cursor:pointer;font-weight:600;font-size:1.05em;color:#16213e;padding:4px 0">📖 Field Reference Guide — How to Fill Each Parameter</summary>
+    <div style="margin-top:12px;font-size:.85em;color:#555;line-height:1.6">
+
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(380px,1fr));gap:12px">
+<div><strong style="color:#1a1a2e">Demographics &amp; Injury</strong>
+<p><b>Age</b> — Patient age at injury (years). Integer, 0–120.</p>
+<p><b>Sex</b> — Biological sex at birth. <i>male</i> or <i>female</i>.</p>
+<p><b>Height / Weight</b> — Best available measurement in cm / kg. Used to compute BMI. Enter N/A if not measured.</p>
+<p><b>AIS Grade</b> — ASIA Impairment Scale. <b>A</b>=Complete (no motor/sensory below level), <b>B</b>=Sensory incomplete, <b>C</b>=Motor incomplete (&lt;½ key muscles &lt;3), <b>D</b>=Motor incomplete (≥½ key muscles ≥3), <b>E</b>=Normal.</p>
+<p><b>Neurological Level</b> — Most caudal segment with normal function. <b>C</b>=Cervical, <b>T</b>=Thoracic, <b>L</b>=Lumbar, <b>S</b>=Sacral.</p>
+</div>
+
+<div><strong style="color:#1a1a2e">Injury Characteristics</strong>
+<p><b>Vertebral Injury</b> — Fracture or dislocation of vertebra? Yes/No/N/A.</p>
+<p><b>Spine Surgery</b> — Surgical stabilization or decompression performed? Yes/No/N/A.</p>
+<p><b>Associated Injury</b> — Traumatic brain injury, major fractures, or organ injuries? Yes/No/N/A.</p>
+<p><b>Injury Year</b> — Calendar year injury occurred (1970–2026).</p>
+<p><b>Etiology</b> — Cause of injury: <i>vehicular</i> (MVC, auto, motorcycle), <i>fall</i>, <i>violence</i> (gunshot, stabbing, assault), <i>sports</i> (diving, football, rugby), <i>other</i>.</p>
+<p><b>Injury→Admission</b> — Days from injury to first admission at SCI center (0–365).</p>
+</div>
+
+<div><strong style="color:#1a1a2e">Comorbidities</strong>
+<p><b>Diabetes</b> — Diagnosed diabetes mellitus (type 1 or 2). <i>Yes/No/N/A.</i></p>
+<p><b>Hypertension</b> — Diagnosed hypertension requiring treatment. <i>Yes/No/N/A.</i></p>
+<p><b>Hyperlipidemia</b> — Diagnosed dyslipidemia or on lipid-lowering therapy. <i>Yes/No/N/A.</i></p>
+<p><b>Arthritis</b> — Diagnosed osteoarthritis or inflammatory arthritis. <i>Yes/No/N/A.</i></p>
+<p><b>Heart Disease</b> — Coronary artery disease, heart failure, or arrhythmia. <i>Yes/No/N/A.</i></p>
+<p><b>Depression / Anxiety</b> — Clinically diagnosed or treated. <i>Yes/No/N/A.</i></p>
+<p><b>Nursing Home</b> — Patient resided in nursing home or skilled facility before injury. <i>Yes/No/N/A.</i></p>
+<p style="color:#888;font-style:italic">💡 Use N/A if comorbidity status is unknown — the model accounts for unassessed conditions.</p>
+</div>
+
+<div><strong style="color:#1a1a2e">Functional &amp; Hospital Data</strong>
+<p><b>FIM Motor</b> — Functional Independence Measure motor subscore (13–91). Measures self-care, sphincter control, transfers, and locomotion at rehabilitation admission. <i>Defaults to N/A (most patients).</i></p>
+<p><b>Sphincter</b> — Bladder sphincter control (1–4 scale). 1=complete control, 4=no control. <i>NSCISC variable AVoSphAd.</i></p>
+<p><b>Anal Sensation</b> — Anal sensation present (1–4 scale). 1=normal, 4=absent. <i>NSCISC variable AAnSnAdm.</i></p>
+<p><b>Walking at Rehab</b> — Able to walk at rehabilitation discharge? <i>Yes/No/N/A.</i></p>
+<p><b>Rehab Stay</b> — Total days in rehabilitation program (1–730 days).</p>
+<p><b>Acute Stay</b> — Days in acute care hospital after injury (0–999 days).</p>
+<p><b>Rehab Hospital Stay</b> — Days in rehabilitation hospital unit (0–999 days). Distinct from total rehab stay.</p>
+<p style="color:#888;font-style:italic">💡 Sphincter, Anal Sensation, and FIM are from NSCISC Form I admission/rehab assessment. Enter N/A if assessment not yet completed.</p>
+</div>
+</div>
+
+<div style="margin-top:14px;padding:10px 12px;background:#e3f2fd;border-radius:6px;font-size:.8em">
+  <strong>⚕️ Clinical Note:</strong> This model was trained on NSCISC 2021 data (35,631 patients, 34% mortality).
+  Predictions are calibrated Cox proportional hazards risk scores (C-index 0.82).
+  The model uses 85 engineered features including non-linear transforms and interaction terms.
+  <b>Not for clinical decision-making without prospective validation.</b>
+</div>
+
+    </div>
+  </details>
+</div>
+
+</div>
+
+<div class="footer">
+  SCI-PReSS Mortality Calculator v1.0 &nbsp;|&nbsp;
+  <a href="https://orcid.org/0009-0001-9170-426X" target="_blank" rel="noopener">Jukrapope Jitpimolmard, MD</a> &nbsp;|&nbsp;
+  Not for clinical use without prospective validation &nbsp;|&nbsp;
+  <a href="https://github.com/jukrapope/sci-mortality-calculator" target="_blank" rel="noopener">GitHub</a>
+</div>
+
+<script>
+// ═══ MODEL CONFIG ═══
+let MODEL = null;
+const FIELDS = [
+  {k:'age',l:'Age',t:'number',d:'35',min:0,max:120},
+  {k:'sex',l:'Sex',t:'select',d:'male',o:['male','female']},
+  {k:'height_cm',l:'Height (cm)',t:'number',d:'173',min:100,max:250,na:1},
+  {k:'weight_kg',l:'Weight (kg)',t:'number',d:'73',min:30,max:300,na:1},
+  {k:'ais',l:'AIS Grade',t:'select',d:'A',o:['A','B','C','D','E']},
+  {k:'neuro_level',l:'Neuro Level',t:'select',d:'C',o:['C','T','L','S']},
+  {k:'vertebral_injury',l:'Vert Injury',t:'select',d:'1',o:[{v:'1',l:'Yes'},{v:'0',l:'No'}],na:1},
+  {k:'spine_surgery',l:'Spine Surgery',t:'select',d:'1',o:[{v:'1',l:'Yes'},{v:'0',l:'No'}],na:1},
+  {k:'associated_injury',l:'Assoc Injury',t:'select',d:'0',o:[{v:'1',l:'Yes'},{v:'0',l:'No'}],na:1},
+  {k:'injury_year',l:'Injury Year',t:'number',d:'2021',min:1970,max:2026},
+  {k:'etiology',l:'Etiology',t:'select',d:'vehicular',o:['vehicular','fall','violence','sports','other']},
+  {k:'days_injury_to_admit',l:'Injury→Admission',t:'number',d:'2',min:0,max:365,na:1,unit:'days',note:'days'},
+  {k:'diabetes',l:'Diabetes',t:'select',d:'0',o:[{v:'1',l:'Yes'},{v:'0',l:'No'}],na:1},
+  {k:'hypertension',l:'Hypertension',t:'select',d:'0',o:[{v:'1',l:'Yes'},{v:'0',l:'No'}],na:1},
+  {k:'hyperlipidemia',l:'Hyperlipidemia',t:'select',d:'0',o:[{v:'1',l:'Yes'},{v:'0',l:'No'}],na:1},
+  {k:'arthritis',l:'Arthritis',t:'select',d:'0',o:[{v:'1',l:'Yes'},{v:'0',l:'No'}],na:1},
+  {k:'heart_disease',l:'Heart Disease',t:'select',d:'0',o:[{v:'1',l:'Yes'},{v:'0',l:'No'}],na:1},
+  {k:'depression',l:'Depression',t:'select',d:'0',o:[{v:'1',l:'Yes'},{v:'0',l:'No'}],na:1},
+  {k:'anxiety',l:'Anxiety',t:'select',d:'0',o:[{v:'1',l:'Yes'},{v:'0',l:'No'}],na:1},
+  {k:'nursing_home_preinjury',l:'Nursing Home',t:'select',d:'0',o:[{v:'1',l:'Yes'},{v:'0',l:'No'}],na:1},
+  {k:'fim_motor',l:'FIM Motor (13-91)',t:'number',d:'50',min:13,max:91,na:1,naDefault:1},
+  {k:'sphincter',l:'Sphincter (1-4)',t:'number',d:'3',min:1,max:4,na:1},
+  {k:'anal_sensation',l:'Anal Sensation (1-4)',t:'number',d:'2',min:1,max:4,na:1},
+  {k:'walking_at_rehab',l:'Walking at Rehab',t:'select',d:'0',o:[{v:'1',l:'Yes'},{v:'0',l:'No'}],na:1},
+  {k:'rehab_duration',l:'Rehab Stay',t:'number',d:'90',min:1,max:730,na:1,unit:'days',note:'≈ 3 months'},
+  {k:'acute_hosp_days',l:'Acute Stay',t:'number',d:'30',min:0,max:999,na:1,unit:'days',note:'≈ 4 weeks'},
+  {k:'rehab_hosp_days',l:'Rehab Hospital Stay',t:'number',d:'60',min:0,max:999,na:1,unit:'days',note:'≈ 2 months'},
+];
+
+// ═══ LOAD MODEL ═══
+async function loadModel(){
+  try{
+    const r = await fetch('cox_model.json');
+    MODEL = await r.json();
+    document.getElementById('goBtn').disabled = false;
+    document.getElementById('goBtn').textContent = '🔍 Calculate Risk';
+    console.log('Model loaded: C-index='+MODEL.c_index+', '+MODEL.n_features+' features');
+  }catch(e){
+    console.error('Model load failed:',e);
+    document.getElementById('goBtn').textContent = '⚠ Model unavailable';
+  }
+}
+
+function na(v){ const s=String(v).trim().toLowerCase(); return s===''||s==='n/a'||s==='na'||s==='none'||s==='?'; }
+
+function getVal(key){
+  const el = document.getElementById('na_'+key);
+  if(el && el.checked) return 'N/A';
+  return document.getElementById('inp_'+key).value;
+}
+
+// ═══ FEATURE ENGINEERING (JS) ═══
+function engineer(p){
+  const F = {};
+  F.age = parseFloat(p.age)||35;
+  F.sex_male = String(p.sex||'').toLowerCase().startsWith('m')?1:0;
+
+  const ht = na(p.height_cm)?NaN:parseFloat(p.height_cm);
+  const wt = na(p.weight_kg)?NaN:parseFloat(p.weight_kg);
+  F.bmi = (!isNaN(ht)&&!isNaN(wt)&&ht>0&&wt>0)?wt/((ht/100)*(ht/100)):NaN;
+  F.bmi_miss = isNaN(F.bmi)?1:0;
+
+  const ais = {'A':5,'B':4,'C':3,'D':2,'E':1};
+  F.ais_ord = ais[String(p.ais||'').toUpperCase()]||0;
+  F.ais_A = F.ais_ord===5?1:0;
+
+  const nl = String(p.neuro_level||'').toUpperCase()[0]||'';
+  const nmap = {'C':4,'T':3,'L':2,'S':1};
+  F.neuro = nmap[nl]||0;
+  F.cerv = F.neuro===4?1:0;
+  F.cerv_A = F.cerv*F.ais_A;
+
+  F.fim = na(p.fim_motor)?NaN:parseFloat(p.fim_motor);
+  F.fim_miss = isNaN(F.fim)?1:0;
+
+  F.sph = na(p.sphincter)?0:parseFloat(p.sphincter)||0;
+  F.sph_miss = na(p.sphincter)?1:0;
+  F.asens = na(p.anal_sensation)?0:parseFloat(p.anal_sensation)||0;
+  F.asens_miss = na(p.anal_sensation)?1:0;
+
+  F.injury_year = parseFloat(p.injury_year)||2021;
+  F.era_pre1990 = F.injury_year<1990?1:0;
+  F.era_1990s = F.injury_year>=1990&&F.injury_year<2000?1:0;
+  F.era_2000s = F.injury_year>=2000&&F.injury_year<2010?1:0;
+  F.era_2010s = F.injury_year>=2010?1:0;
+
+  const gv = ['diabetes','hypertension','hyperlipidemia','arthritis','heart_disease','depression','anxiety','vertebral_injury','spine_surgery','associated_injury'];
+  let gapN = 0;
+  for(const g of gv) if(na(p[g])) gapN++;
+  F.care_gap = gapN/gv.length;
+
+  for(const [k,y,u] of [['vertebral_injury','vert_inj_yes','vert_inj_unknown'],['spine_surgery','spine_surg_yes','spine_surg_unknown'],['associated_injury','assoc_inj_yes','assoc_inj_unknown']]){
+    F[y]=0;F[u]=0;
+    if(na(p[k]))F[u]=1;else F[y]=parseInt(p[k])?1:0;
+  }
+
+  const cmap = {'diabetes':['diabetes','diabetes_unk'],'hypertension':['hypertension','hypertension_unk'],'hyperlipidemia':['hyperlipidemia','hyperlipidemia_unk'],'arthritis':['arthritis','arthritis_unk'],'heart_disease':['heart_disease','heart_disease_unk'],'depression':['depression','depression_unk'],'anxiety':['anxiety','anxiety_unk']};
+  for(const [k,[y,u]] of Object.entries(cmap)){
+    F[y]=0;F[u]=0;
+    if(na(p[k]))F[u]=1;else F[y]=parseInt(p[k])?1:0;
+  }
+
+  F.comorb_known_count = (F.diabetes||0)+(F.hypertension||0)+(F.hyperlipidemia||0)+(F.arthritis||0)+(F.heart_disease||0)+(F.depression||0)+(F.anxiety||0);
+  F.psych_comorb = (F.depression||F.anxiety)?1:0;
+
+  F.nursing_home_preinj=0;F.residence_unknown=0;
+  if(na(p.nursing_home_preinjury))F.residence_unknown=1;else F.nursing_home_preinj=parseInt(p.nursing_home_preinjury)?1:0;
+
+  for(const [k,d,cm] of [['days_injury_to_admit','days_inj_to_admit',365],['rehab_duration','rehab_duration',730],['acute_hosp_days','acute_days',999],['rehab_hosp_days','rehab_days',999]]){
+    if(na(p[k])){F[d]=NaN;F[d+'_miss']=1;}
+    else{const v=parseFloat(p[k]);F[d]=(v>0&&v<cm)?v:NaN;F[d+'_miss']=isNaN(F[d])?1:0;}
+  }
+
+  const ad=F.acute_days||0,rd=F.rehab_days||0;
+  F.total_hosp_days = (isNaN(ad)?0:ad)+(isNaN(rd)?0:rd);
+  F.total_hosp_days_miss = (F.acute_days_miss&&F.rehab_days_miss)?1:0;
+
+  const et = String(p.etiology||'').toLowerCase();
+  F.etiol_vehicular = /vehic|car|motor|auto|mvc/.test(et)?1:0;
+  F.etiol_violence = /viol|gun|stab|shot|assault/.test(et)?1:0;
+  F.etiol_falls = /fall/.test(et)?1:0;
+  F.etiol_sports = /sport|div|foot|rugby/.test(et)?1:0;
+  F.etiol_other = !(F.etiol_vehicular||F.etiol_violence||F.etiol_falls||F.etiol_sports)?1:0;
+
+  F.walking_at_rehab=0;F.walking_unknown=0;
+  if(na(p.walking_at_rehab))F.walking_unknown=1;else F.walking_at_rehab=parseInt(p.walking_at_rehab)?1:0;
+
+  F.race=0;F.educ=0;F.marital=0;F.insur=0;F.etiol_freq=0;
+
+  const age = F.age||35;
+  F.age_squared = age*age/100;
+  F.age_log = Math.log(Math.max(age,1));
+  const bf = F.bmi&&!isNaN(F.bmi)?F.bmi:25;
+  F.bmi_log = Math.log(Math.max(Math.min(bf,80),10));
+  F.bmi_squared = bf*bf/100;
+
+  for(const dc of ['days_inj_to_admit','rehab_duration','acute_days','rehab_days','total_hosp_days']){
+    let v = F[dc]; if(isNaN(v)||v<=0) v=1;
+    F[dc+'_log'] = Math.log(Math.max(v,1));
+  }
+
+  F.care_gap_x_age = F.care_gap*age/100;
+  F.care_gap_x_aisA = F.care_gap*F.ais_A;
+  F.nursing_x_age = (F.nursing_home_preinj||0)*age/100;
+  F.diabetes_x_htn = (F.diabetes||0)*(F.hypertension||0);
+  F.cerv_x_caregap = F.cerv*F.care_gap;
+  F.care_gap_x_comorb = F.care_gap*(F.comorb_known_count||0);
+  F.age_x_comorb = age*(F.comorb_known_count||0)/100;
+  F.age_x_ais = age*(F.ais_ord||0)/100;
+  F.age_x_cerv = age*F.cerv/100;
+
+  return F;
+}
+
+// ═══ COMPUTE RISK ═══
+function compute(){
+  if(!MODEL){alert('Model still loading. Please wait.');return;}
+  const p = {};
+  for(const f of FIELDS) p[f.k] = getVal(f.k);
+
+  const F = engineer(p);
+  let score = 0;
+  for(const feat of MODEL.features){
+    let val = F[feat];
+    if(val===undefined||isNaN(val)) val = 0;
+    const med = MODEL.feature_medians[feat]||0;
+    const coef = MODEL.coefficients[feat]||0;
+    score += coef * (val - med);
+  }
+
+  const logOdds = MODEL.calibration_intercept + MODEL.calibration_coef * score;
+  const risk = 1/(1+Math.exp(-logOdds));
+  const known = FIELDS.filter(f=>!na(getVal(f.k))).length;
+
+  document.getElementById('results').classList.add('show');
+  document.getElementById('rNum').textContent = (risk*100).toFixed(1)+'%';
+
+  const pct = Math.min(risk*100,100);
+  const fill = document.getElementById('mFill');
+  fill.style.width = pct+'%';
+  fill.className = 'meter-fill '+(pct<25?'low':pct<40?'med':pct<55?'high':'crit');
+
+  let tier,tierL;
+  if(risk<0.25){tier='LOW';tierL='🟢 Low Risk';}
+  else if(risk<0.40){tier='MODERATE';tierL='🟡 Moderate';}
+  else if(risk<0.55){tier='HIGH';tierL='🟠 High Risk';}
+  else{tier='CRITICAL';tierL='🔴 Critical';}
+  document.getElementById('rBadge').innerHTML = `<span class="badge ${tier}">${tierL}</span>`;
+  document.getElementById('cRisk').textContent = (risk*100).toFixed(1)+'%';
+  document.getElementById('cFields').textContent = known+'/'+FIELDS.length;
+  document.getElementById('cModel').textContent = 'C='+MODEL.c_index;
+
+  const missing = FIELDS.length - known;
+  let warn='';
+  if(missing===0) warn='<div class="warn g">✅ All fields complete — high confidence prediction</div>';
+  else if(missing<=5) warn='<div class="warn i">ℹ️ '+missing+' fields unknown. Model accounts for missingness via unknown flags.</div>';
+  else if(missing<=15) warn='<div class="warn w">⚠️ '+missing+' fields unknown. Risk estimate may be inflated by missingness pattern.</div>';
+  else warn='<div class="warn w">⚠️ '+missing+' fields unknown (out of '+FIELDS.length+'). Collect more clinical data for accurate estimate.</div>';
+  document.getElementById('warnBox').innerHTML = warn;
+
+  let rec='';
+  if(tier==='CRITICAL')rec='<div class="warn w"><strong>🔴 Action:</strong> Intensive monitoring — weekly MDT review, palliative care consult.</div>';
+  else if(tier==='HIGH')rec='<div class="warn w"><strong>🟠 Action:</strong> Enhanced monitoring — biweekly follow-up, full cardiometabolic workup.</div>';
+  else if(tier==='MODERATE')rec='<div class="warn i"><strong>🟡 Action:</strong> Standard monitoring — monthly follow-up, annual screening.</div>';
+  else rec='<div class="warn g"><strong>🟢 Action:</strong> Routine monitoring — annual evaluation sufficient based on risk profile.</div>';
+  document.getElementById('recBox').innerHTML = rec;
+}
+
+// ═══ BUILD FORM ═══
+function buildForm(){
+  const g = document.getElementById('fields');
+  g.innerHTML = FIELDS.map(f=>{
+    let inp;
+    if(f.t==='select'){
+      const opts = (f.o||[]).map(o=>{
+        const v = typeof o==='string'?o:o.v;
+        const l = typeof o==='string'?o:o.l;
+        const sel = v==f.d?' selected':'';
+        return `<option value="${v}"${sel}>${l}</option>`;
+      }).join('');
+      inp = `<select id="inp_${f.k}">${opts}</select>`;
+    }else{
+      inp = `<input type="${f.t}" id="inp_${f.k}" value="${f.d}" min="${f.min||''}" max="${f.max||''}" oninput="updateNote('${f.k}')">`;
+    }
+    const noteHtml = f.note?`<div class="na-row" style="color:#1976d2" id="note_${f.k}">${f.note}</div>`:'';
+    const naHtml = f.na?`<div class="na-row"><label><input type="checkbox" id="na_${f.k}" onchange="togNA('${f.k}')" ${f.naDefault?'checked':''}> N/A</label></div>`:'';
+    return `<div class="field"><label>${f.l}${f.unit?' <span style="font-weight:400;font-size:.75em;color:#999">('+f.unit+')</span>':''}</label>${inp}${noteHtml}${naHtml}</div>`;
+  }).join('');
+  // Apply naDefault to inputs
+  for(const f of FIELDS){
+    if(f.naDefault){
+      const inp=document.getElementById('inp_'+f.k);
+      inp.classList.add('na');inp.disabled=true;inp.value='N/A';
+    }
+  }
+}
+
+function updateNote(k){
+  const f = FIELDS.find(x=>x.k===k);
+  if(!f||!f.note) return;
+  const el = document.getElementById('note_'+k);
+  if(!el) return;
+  const v = parseFloat(document.getElementById('inp_'+k).value);
+  if(isNaN(v)){el.textContent=f.note;return;}
+  // Dynamic note based on value
+  if(k==='rehab_duration'||k==='rehab_hosp_days')
+    el.textContent = `${v} days ≈ ${(v/7).toFixed(1)} weeks ≈ ${(v/30).toFixed(1)} months`;
+  else if(k==='acute_hosp_days')
+    el.textContent = `${v} days ≈ ${(v/7).toFixed(1)} weeks`;
+  else el.textContent = f.note;
+}
+
+function togNA(k){
+  const cb=document.getElementById('na_'+k),inp=document.getElementById('inp_'+k);
+  if(cb.checked){inp.classList.add('na');inp.value='N/A';inp.disabled=true;}
+  else{inp.classList.remove('na');inp.disabled=false;inp.value=FIELDS.find(f=>f.k===k).d;}
+  if(FIELDS.find(f=>f.k===k)?.note) updateNote(k);
+}
+
+function clearAll(){
+  for(const f of FIELDS){
+    const inp=document.getElementById('inp_'+f.k),cb=document.getElementById('na_'+f.k);
+    if(f.naDefault){
+      inp.value='N/A';inp.classList.add('na');inp.disabled=true;
+      if(cb)cb.checked=true;
+    }else{
+      inp.value=f.d;inp.classList.remove('na');inp.disabled=false;
+      if(cb)cb.checked=false;
+    }
+  }
+  document.getElementById('results').classList.remove('show');
+}
+
+buildForm();
+loadModel();
+</script>
+</body>
+</html>
