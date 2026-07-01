@@ -397,11 +397,9 @@ function getVal(key){
   const naEl = document.getElementById('na_'+key);
   if(naEl && naEl.checked) return 'N/A';
   const inp = document.getElementById('inp_'+key);
-  // Hidden fields (not in current stage): return default value, not N/A
-  if(!inp){
-    const f = FIELDS.find(x=>x.k===key);
-    return f ? f.d : '';
-  }
+  // Hidden fields (not yet reached in cascade): treat as truly unknown (N/A)
+  // This prevents default values from contaminating predictions across stages
+  if(!inp) return 'N/A';
   return inp.value;
 }
 
