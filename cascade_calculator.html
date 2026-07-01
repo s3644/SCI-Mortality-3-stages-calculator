@@ -293,10 +293,41 @@ function init(){
 }
 
 function setStage(s){
+  // Save current field values before re-rendering
+  const saved = {};
+  for(const f of FIELDS){
+    const inp = document.getElementById('inp_'+f.k);
+    const naCb = document.getElementById('na_'+f.k);
+    if(inp){ saved[f.k] = {val: inp.value, dis: inp.disabled, cls: inp.className}; }
+    if(naCb){ saved[f.k+'_na'] = naCb.checked; }
+  }
+  const savedToggles = {};
+  for(const f of FIELDS){
+    const tg = document.getElementById('naToggle_'+f.k);
+    if(tg){ savedToggles[f.k] = tg.className; }
+  }
+
   currentStage = s;
   document.querySelectorAll('.cascade-btn').forEach(b=>b.classList.remove('active'));
   document.getElementById('btnS'+s).classList.add('active');
   renderFields();
+
+  // Restore saved values
+  for(const f of FIELDS){
+    const sv = saved[f.k];
+    if(sv){
+      const inp = document.getElementById('inp_'+f.k);
+      if(inp){ inp.value = sv.val; inp.disabled = sv.dis; inp.className = sv.cls; }
+    }
+    if(saved[f.k+'_na']){
+      const naCb = document.getElementById('na_'+f.k);
+      if(naCb) naCb.checked = saved[f.k+'_na'];
+    }
+    if(savedToggles[f.k]){
+      const tg = document.getElementById('naToggle_'+f.k);
+      if(tg) tg.className = savedToggles[f.k];
+    }
+  }
 }
 
 function renderFields(){
