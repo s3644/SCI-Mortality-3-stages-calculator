@@ -88,6 +88,22 @@ body{font:14px/1.55 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
 .footer a{color:var(--accent)}
 .loading{text-align:center;padding:16px;color:#999;font-size:.88em}
 
+/* Clinical Assessment */
+.clinical-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:10px}
+@media(max-width:600px){.clinical-grid{grid-template-columns:1fr}}
+.clinical-panel{background:#f8f9fb;border-radius:8px;padding:12px}
+.clinical-panel h4{font-size:.82em;font-weight:700;color:#16213e;margin:0 0 8px;padding-bottom:6px;border-bottom:2px solid #e0e0e0}
+.monitor-item{display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid #f0f0f0;font-size:.78em}
+.monitor-item:last-child{border-bottom:none}
+.monitor-item .m-label{color:#555;font-weight:500}
+.monitor-item .m-freq{font-weight:700;color:var(--accent)}
+.comp-row{display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid #f0f0f0;font-size:.76em}
+.comp-row:last-child{border-bottom:none}
+.comp-row .c-label{color:#666}
+.comp-risk-bar{height:6px;background:#eee;border-radius:3px;margin-left:6px;flex:1;max-width:80px}
+.comp-risk-fill{height:100%;border-radius:3px}
+.comp-risk-fill.low{background:#66bb6a}.comp-risk-fill.med{background:#ffa726}.comp-risk-fill.high{background:#ef5350}.comp-risk-fill.crit{background:#b71c1c}
+
 /* Mobile */
 @media(max-width:600px){
   .grid{grid-template-columns:1fr}
@@ -168,6 +184,9 @@ body{font:14px/1.55 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
 
   <!-- Clinical Recommendations -->
   <div id="clinicalRecs" style="margin-top:14px"></div>
+
+  <!-- Clinical Assessment: Monitoring + Complication Profile -->
+  <div id="clinicalAssess" style="margin-top:12px"></div>
 </div>
 
 <!-- FIELD REFERENCE -->
@@ -731,6 +750,57 @@ function compute(){
       }
       recs += '</div></details>';
       document.getElementById('clinicalRecs').innerHTML = recs;
+
+      // ═══ Clinical Assessment: Monitoring Schedule + Complication Risk Profile ═══
+      let assessHTML = '<details><summary style="cursor:pointer;font-weight:600;color:var(--accent);padding:4px 0">🩺 Clinical Assessment ▸</summary>';
+      assessHTML += '<div class="clinical-grid" style="margin-top:8px">';
+
+      // ── MONITORING SCHEDULE ──
+      let monFreq, urodFreq, clinicFreq, renalFreq, creatFreq;
+      if(tier==='LOW'){
+        monFreq='Annual';urodFreq='Every 2 years';clinicFreq='Annual';renalFreq='Every 2 years';creatFreq='Annual';
+      }else if(tier==='MODERATE'){
+        monFreq='6-Monthly';urodFreq='Annual';clinicFreq='6-Monthly';renalFreq='Annual';creatFreq='6-Monthly';
+      }else if(tier==='HIGH'){
+        monFreq='Quarterly';urodFreq='6-Monthly';clinicFreq='Quarterly';renalFreq='6-Monthly';creatFreq='Quarterly';
+      }else{
+        monFreq='Monthly';urodFreq='3-Monthly';clinicFreq='Monthly';renalFreq='3-Monthly';creatFreq='Monthly';
+      }
+      assessHTML += `<div class="clinical-panel">
+        <h4>📅 MONITORING SCHEDULE</h4>
+        <div class="monitor-item"><span class="m-label">Monitoring</span><span class="m-freq">${monFreq}</span></div>
+        <div class="monitor-item"><span class="m-label">Urodynamics</span><span class="m-freq">${urodFreq}</span></div>
+        <div class="monitor-item"><span class="m-label">Clinic Visit</span><span class="m-freq">${clinicFreq}</span></div>
+        <div class="monitor-item"><span class="m-label">Renal Ultrasound</span><span class="m-freq">${renalFreq}</span></div>
+        <div class="monitor-item"><span class="m-label">Creatinine / eGFR</span><span class="m-freq">${creatFreq}</span></div>
+      </div>`;
+
+      // ── COMPLICATION RISK PROFILE ──
+      // Estimate complication risks based on mortality tier (from SCI-PReSS model correlations)
+      const compRisks = {
+        LOW:      {mort:[3,15],ulcer:[5,25],uti:[10,35],rehosp:[5,25],pain:[10,35],hlth:[10,30],work:[5,25],fall:[5,20],sleep:[5,25]},
+        MODERATE: {mort:[15,30],ulcer:[25,50],uti:[35,60],rehosp:[25,50],pain:[35,60],hlth:[30,55],work:[25,50],fall:[20,40],sleep:[25,50]},
+        HIGH:     {mort:[30,55],ulcer:[50,75],uti:[55,80],rehosp:[40,65],pain:[35,60],hlth:[40,65],work:[30,55],fall:[35,60],sleep:[30,55]},
+        CRITICAL: {mort:[55,90],ulcer:[75,95],uti:[80,98],rehosp:[65,90],pain:[60,85],hlth:[65,90],work:[55,80],fall:[60,85],sleep:[55,80]}
+      };
+      const cr = compRisks[tier];
+      const compLabels = {
+        mort:'Mortality',ulcer:'Pressure Ulcer',uti:'UTI',rehosp:'Re-Hospitalization',
+        pain:'Severe Pain',hlth:'Poor Health Perception',work:'Pain w/ Work',fall:'Falls',sleep:'Sleep Issues'
+      };
+      assessHTML += '<div class="clinical-panel"><h4>⚠️ COMPLICATION RISK PROFILE</h4>';
+      for(const [k,range] of Object.entries(cr)){
+        const avg = (range[0]+range[1])/2;
+        const barClass = avg<25?'low':avg<50?'med':avg<75?'high':'crit';
+        assessHTML += `<div class="comp-row">
+          <span class="c-label">${compLabels[k]}</span>
+          <div class="comp-risk-bar"><div class="comp-risk-fill ${barClass}" style="width:${Math.min(avg,100)}%"></div></div>
+          <span style="font-size:.72em;color:#888;min-width:52px;text-align:right">${range[0]}–${range[1]}%</span>
+        </div>`;
+      }
+      assessHTML += '</div>';
+      assessHTML += '</div></details>';
+      document.getElementById('clinicalAssess').innerHTML = assessHTML;
 
       document.getElementById('resultsCard').classList.add('show');
     }catch(e){
