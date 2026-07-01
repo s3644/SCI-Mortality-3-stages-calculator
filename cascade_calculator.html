@@ -148,18 +148,23 @@ body{font:14px/1.55 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
     <div id="badgeTier"></div>
   </div>
   <div class="info-row">
-    <div class="info-box"><div class="val" id="infoRisk">—</div><div class="lbl">Mortality Risk</div></div>
-    <div class="info-box"><div class="val" id="infoFields">—</div><div class="lbl">Fields Known</div></div>
-    <div class="info-box"><div class="val" id="infoStage">—</div><div class="lbl">Cascade Stage</div></div>
-    <div class="info-box"><div class="val" id="infoScore">—</div><div class="lbl">Total Score</div></div>
+    <div class="info-box"><div class="val" id="infoRisk">—</div><div class="lbl">5-Year Risk</div></div>
+    <div class="info-box"><div class="val" id="infoAnnual">—</div><div class="lbl">Annual Risk</div></div>
+    <div class="info-box"><div class="val" id="infoCI">—</div><div class="lbl">95% CI (5yr)</div></div>
+    <div class="info-box"><div class="val" id="infoConf">—</div><div class="lbl">Confidence</div></div>
+    <div class="info-box"><div class="val" id="infoFields">—</div><div class="lbl">Fields / Stage</div></div>
+    <div class="info-box"><div class="val" id="infoScore">—</div><div class="lbl">Risk Score</div></div>
   </div>
   <div id="warnMsg"></div>
 
+  <!-- Stage Predictive Power -->
+  <div id="stagePower" style="margin:10px 0"></div>
+
   <!-- Score Breakdown -->
-  <div id="scoreBreakdown" style="margin-top:14px"></div>
+  <div id="scoreBreakdown" style="margin-top:8px"></div>
 
   <!-- Missing Data Alerts -->
-  <div id="missingAlerts" style="margin-top:12px"></div>
+  <div id="missingAlerts" style="margin-top:8px"></div>
 
   <!-- Clinical Recommendations -->
   <div id="clinicalRecs" style="margin-top:14px"></div>
@@ -568,7 +573,30 @@ function compute(){
       // Calibrated probability via logistic calibration
       const logOdds = (MODEL.calibration_intercept||0) + (MODEL.calibration_coef||1) * totalScore;
       const riskScore = 1/(1+Math.exp(-logOdds));
-      const riskPct = (riskScore*100).toFixed(1);
+      const meanFU = 13.3;
+      const risk5yr = 1 - Math.pow(1-riskScore, 5/meanFU);
+      const annualRisk = 1 - Math.pow(1-riskScore, 1/meanFU);
+      const riskPct = (risk5yr*100).toFixed(1);
+
+      // ═══ Monte Carlo CI ═══
+      const calibSE = 0.05, nMC = 200;
+      let risks = [];
+      for(let i=0;i<nMC;i++){
+        const perturb = logOdds + (Math.random()+Math.random()+Math.random()-1.5)*calibSE*2.5;
+        risks.push(1/(1+Math.exp(-perturb)));
+      }
+      risks.sort((a,b)=>a-b);
+      const ciLo = risks[Math.floor(nMC*0.025)];
+      const ciHi = risks[Math.floor(nMC*0.975)];
+      const ciLo5yr = 1 - Math.pow(1-ciLo, 5/meanFU);
+      const ciHi5yr = 1 - Math.pow(1-ciHi, 5/meanFU);
+      const ciLoAnn = 1 - Math.pow(1-ciLo, 1/meanFU);
+      const ciHiAnn = 1 - Math.pow(1-ciHi, 1/meanFU);
+      const ciWidth = (ciHi5yr-ciLo5yr)*100;
+      let confLevel, confColor;
+      if(ciWidth<5){confLevel='High ✅';confColor='#2e7d32';}
+      else if(ciWidth<12){confLevel='Mod ℹ️';confColor='#e65100';}
+      else{confLevel='Low ⚠️';confColor='#c62828';}
 
       // Known count (visible only)
       const known = visibleFields.filter(f=>!na(getVal(f.k))).length;
@@ -583,12 +611,12 @@ function compute(){
         return naEl && naEl.checked;
       });
 
-      // ── Risk tier ──
+      // ── Risk tier (5-year thresholds from manuscript Table 6) ──
       let tier,tierClass,fillClass;
       const r = parseFloat(riskPct);
-      if(r<15){tier='LOW';tierClass='badge LOW';fillClass='low';}
-      else if(r<30){tier='MODERATE';tierClass='badge MODERATE';fillClass='med';}
-      else if(r<50){tier='HIGH';tierClass='badge HIGH';fillClass='high';}
+      if(r<25){tier='LOW';tierClass='badge LOW';fillClass='low';}
+      else if(r<40){tier='MODERATE';tierClass='badge MODERATE';fillClass='med';}
+      else if(r<55){tier='HIGH';tierClass='badge HIGH';fillClass='high';}
       else{tier='CRITICAL';tierClass='badge CRITICAL';fillClass='crit';}
 
       const tierLabels = {LOW:'🟢 Low Risk',MODERATE:'🟡 Moderate',HIGH:'🟠 High Risk',CRITICAL:'🔴 Critical'};
@@ -599,9 +627,24 @@ function compute(){
       document.getElementById('meterFill').className = 'meter-fill '+fillClass;
       document.getElementById('badgeTier').innerHTML = `<span class="${tierClass}">${tierLabels[tier]}</span>`;
       document.getElementById('infoRisk').textContent = riskPct+'%';
-      document.getElementById('infoFields').textContent = known+'/'+total;
-      document.getElementById('infoStage').textContent = 'Stage '+currentStage;
+      document.getElementById('infoAnnual').innerHTML = (annualRisk*100).toFixed(2)+'%<br><span style="font-size:.6em;color:#999">per year</span>';
+      document.getElementById('infoCI').textContent = (ciLo5yr*100).toFixed(1)+'–'+(ciHi5yr*100).toFixed(1)+'%';
+      document.getElementById('infoConf').innerHTML = '<span style="color:'+confColor+';font-size:.9em">'+confLevel+'</span>';
+      document.getElementById('infoFields').textContent = known+'/'+total+' · S'+currentStage;
       document.getElementById('infoScore').textContent = displayTotal+' pts';
+
+      // ═══ Stage Predictive Power ═══
+      const stageMetrics = {1:{auc:'0.642',ci:'0.62–0.67'},2:{auc:'0.840',ci:'0.82–0.86'},3:{cIdx:'0.824',ci:'0.815–0.830'}};
+      let powerHTML = '<div style="display:flex;gap:6px;font-size:.72em;color:#888;margin-bottom:4px">';
+      for(let s=1;s<=3;s++){
+        const m=stageMetrics[s];
+        const active=s===currentStage?' style="font-weight:700;color:#1565c0"':' style="opacity:0.5"';
+        const val=s===3?'C-idx '+m.cIdx:'AUC '+m.auc;
+        powerHTML+='<span'+active+'>S'+s+': '+val+'</span>';
+        if(s<3)powerHTML+=' | ';
+      }
+      powerHTML+='</div>';
+      document.getElementById('stagePower').innerHTML=powerHTML;
 
       // ── Warn Message ──
       let warnHtml = '';
@@ -617,7 +660,7 @@ function compute(){
       document.getElementById('warnMsg').innerHTML = warnHtml;
 
       // ── Score Breakdown ──
-      let breakdown = '<details open><summary style="cursor:pointer;font-weight:600;color:var(--accent);padding:4px 0">📋 Score Breakdown by Category</summary>';
+      let breakdown = '<details><summary style="cursor:pointer;font-weight:600;color:var(--accent);padding:4px 0">📋 Score Breakdown by Category ▸</summary>';
       breakdown += '<div style="margin-top:8px">';
       const sortedCats = Object.entries(catScores).sort((a,b)=>b[1].pts-a[1].pts);
       for(const [cat,data] of sortedCats){
@@ -664,7 +707,7 @@ function compute(){
         }
       }
       if(alertItems.length>0){
-        alerts = '<details open><summary style="cursor:pointer;font-weight:600;color:var(--warn);padding:4px 0">⚠️ Missing Data Alerts ('+alertItems.length+')</summary><div style="margin-top:6px">';
+        alerts = '<details><summary style="cursor:pointer;font-weight:600;color:var(--warn);padding:4px 0">⚠️ Missing Data Alerts ('+alertItems.length+') ▸</summary><div style="margin-top:6px">';
         for(const a of alertItems){
           const icon = a.severity==='warn'?'⚠️':'ℹ️';
           alerts += `<div class="warn-box ${a.severity==='warn'?'warn':'info'}" style="margin:4px 0"><strong>${icon} ${a.field}:</strong> ${a.msg}</div>`;
@@ -678,13 +721,13 @@ function compute(){
       // ── Clinical Recommendations ──
       let recs = '<details open><summary style="cursor:pointer;font-weight:600;color:var(--accent);padding:4px 0">🩺 Clinical Recommendations</summary><div style="margin-top:8px">';
       if(tier==='CRITICAL'){
-        recs += '<div class="warn-box bad"><strong>🔴 CRITICAL RISK — Urgent comprehensive evaluation required</strong><br>• Complete multi-system assessment (cardiac, respiratory, renal, metabolic)<br>• Urodynamics + renal ultrasound + laboratory panel<br>• Consider subspecialty referral (cardiology, nephrology, pulmonology)<br>• HbA1c, lipid panel, PHQ-9 depression screening<br>• Case management / care coordination<br>• Weekly home vitals monitoring if outpatient</div>';
+        recs += '<div class="warn-box bad"><strong>🔴 CRITICAL RISK — Urgent comprehensive evaluation</strong><br>• Complete multi-system assessment (cardiac, respiratory, renal, metabolic)<br>• Urodynamics + renal ultrasound + laboratory panel<br>• Consider subspecialty referral<br>• HbA1c, lipid panel, PHQ-9 screening<br><em>5-Year Risk: '+riskPct+'% | Annual: '+(annualRisk*100).toFixed(2)+'%/yr | Stage '+currentStage+'</em></div>';
       } else if(tier==='HIGH'){
-        recs += '<div class="warn-box warn"><strong>🟠 HIGH RISK — Proactive management recommended</strong><br>• Comprehensive annual evaluation with semi-annual follow-up<br>• Screen for all 7 comorbidities — unassessed status is a risk factor<br>• Renal ultrasound and urodynamics every 6 months<br>• Creatinine/eGFR monitoring every 6 months<br>• Depression screening (PHQ-9) at each visit</div>';
+        recs += '<div class="warn-box warn"><strong>🟠 HIGH RISK — Proactive management</strong><br>• Comprehensive annual evaluation, quarterly follow-up<br>• Screen all 7 comorbidities<br>• Renal ultrasound + urodynamics annually<br>• Depression screening (PHQ-9) each visit<br><em>5-Year Risk: '+riskPct+'% | Annual: '+(annualRisk*100).toFixed(2)+'%/yr | Stage '+currentStage+'</em></div>';
       } else if(tier==='MODERATE'){
-        recs += '<div class="warn-box info"><strong>🟡 MODERATE RISK — Standard monitoring</strong><br>• Annual comprehensive SCI evaluation<br>• Renal ultrasound annually<br>• Creatinine/eGFR annually<br>• Screen for cardiovascular risk factors<br>• Monitor for development of new comorbidities</div>';
+        recs += '<div class="warn-box info"><strong>🟡 MODERATE RISK — Standard monitoring</strong><br>• Annual comprehensive SCI evaluation<br>• 6-monthly HbA1c/lipid panel<br>• BP log, PHQ-9 screening<br><em>5-Year Risk: '+riskPct+'% | Annual: '+(annualRisk*100).toFixed(2)+'%/yr | Stage '+currentStage+'</em></div>';
       } else {
-        recs += '<div class="warn-box ok"><strong>🟢 LOW RISK — Routine follow-up</strong><br>• Annual SCI evaluation sufficient<br>• Renal ultrasound every 2 years<br>• Standard preventive care<br>• Monitor for changes in functional status</div>';
+        recs += '<div class="warn-box ok"><strong>🟢 LOW RISK — Routine follow-up</strong><br>• Annual SCI evaluation sufficient<br>• Cardiometabolic screening Q2yr<br>• Standard preventive care<br><em>5-Year Risk: '+riskPct+'% | Annual: '+(annualRisk*100).toFixed(2)+'%/yr | Stage '+currentStage+'</em></div>';
       }
       recs += '</div></details>';
       document.getElementById('clinicalRecs').innerHTML = recs;
