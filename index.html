@@ -105,10 +105,11 @@ body{font:14px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif
     <div id="rBadge"></div>
   </div>
   <div class="ci-row">
-    <div class="ci-box"><div class="l">Mortality Risk</div><div class="v" id="cRisk">—</div></div>
+    <div class="ci-box"><div class="l">5-Year Risk</div><div class="v" id="cRisk">—</div></div>
+    <div class="ci-box"><div class="l">Annual Risk</div><div class="v" id="cAnnual">—</div></div>
     <div class="ci-box"><div class="l">95% CI</div><div class="v" id="cCI">—</div></div>
-    <div class="ci-box"><div class="l">Fields Known</div><div class="v" id="cFields">—</div></div>
-    <div class="ci-box"><div class="l">Stage</div><div class="v" id="cStage">—</div></div>
+    <div class="ci-box"><div class="l">Confidence</div><div class="v" id="cConf">—</div></div>
+    <div class="ci-box"><div class="l">Fields / Stage</div><div class="v" id="cFields">—</div></div>
   </div>
   <details id="scoreBreakdown" style="margin-top:8px">
     <summary style="cursor:pointer;font-weight:600;font-size:.82em;color:#1565c0;padding:4px 0">📈 Score Breakdown &amp; Stage Metrics ▸</summary>
@@ -366,6 +367,11 @@ function compute(){
   const risk = 1/(1+Math.exp(-logOdds));
   const known = FIELDS.filter(f=>!na(getVal(f.k))).length;
 
+  // ═══ Annualized Risk ═══
+  const meanFU = 13.3; // years mean follow-up in NSCISC
+  const annualRisk = 1 - Math.pow(1-risk, 1/meanFU);
+  const risk5yr = 1 - Math.pow(1-risk, 5/meanFU); // 5-year risk from Cox model
+
   // ═══ Stage Detection ═══
   const stage1Fields = ['age','sex','ais','neuro_level','etiology','injury_year','height_cm','weight_kg'];
   const stage2Fields = ['vertebral_injury','spine_surgery','associated_injury','diabetes','hypertension','hyperlipidemia','arthritis','heart_disease','depression','anxiety','nursing_home_preinjury','walking_at_rehab'];
@@ -396,23 +402,38 @@ function compute(){
 
   // ═══ Display ═══
   document.getElementById('results').classList.add('show');
-  document.getElementById('rNum').textContent = (risk*100).toFixed(1)+'%';
+  document.getElementById('rNum').textContent = (risk5yr*100).toFixed(1)+'%';
 
-  const pct = Math.min(risk*100,100);
+  const pct = Math.min(risk5yr*100,100);
   const fill = document.getElementById('mFill');
   fill.style.width = pct+'%';
   fill.className = 'meter-fill '+(pct<25?'low':pct<40?'med':pct<55?'high':'crit');
 
   let tier,tierL;
-  if(risk<0.25){tier='LOW';tierL='🟢 Low Risk';}
-  else if(risk<0.40){tier='MODERATE';tierL='🟡 Moderate';}
-  else if(risk<0.55){tier='HIGH';tierL='🟠 High Risk';}
+  if(risk5yr<0.25){tier='LOW';tierL='🟢 Low Risk';}
+  else if(risk5yr<0.40){tier='MODERATE';tierL='🟡 Moderate';}
+  else if(risk5yr<0.55){tier='HIGH';tierL='🟠 High Risk';}
   else{tier='CRITICAL';tierL='🔴 Critical';}
   document.getElementById('rBadge').innerHTML = `<span class="badge ${tier}">${tierL}</span>`;
-  document.getElementById('cRisk').textContent = (risk*100).toFixed(1)+'%';
-  document.getElementById('cCI').textContent = (ciLo*100).toFixed(1)+'%–'+(ciHi*100).toFixed(1)+'%';
-  document.getElementById('cFields').textContent = known+'/'+FIELDS.length;
-  document.getElementById('cStage').textContent = stageName;
+
+  // Annualized CI
+  const ciLoAnn = 1 - Math.pow(1-ciLo, 1/meanFU);
+  const ciHiAnn = 1 - Math.pow(1-ciHi, 1/meanFU);
+  const ciLo5yr = 1 - Math.pow(1-ciLo, 5/meanFU);
+  const ciHi5yr = 1 - Math.pow(1-ciHi, 5/meanFU);
+
+  // Confidence level
+  const ciWidth = (ciHi5yr-ciLo5yr)*100;
+  let confLevel, confColor;
+  if(ciWidth<5){confLevel='High ✅';confColor='#2e7d32';}
+  else if(ciWidth<12){confLevel='Moderate ℹ️';confColor='#e65100';}
+  else{confLevel='Low ⚠️';confColor='#c62828';}
+
+  document.getElementById('cRisk').textContent = (risk5yr*100).toFixed(1)+'%';
+  document.getElementById('cAnnual').innerHTML = (annualRisk*100).toFixed(2)+'%<span class="s" style="display:block">per year</span>';
+  document.getElementById('cCI').innerHTML = (ciLo5yr*100).toFixed(1)+'%–'+(ciHi5yr*100).toFixed(1)+'%<span class="s" style="display:block">5-year</span>';
+  document.getElementById('cConf').innerHTML = `<span style="color:${confColor}">${confLevel}</span>`;
+  document.getElementById('cFields').textContent = known+'/'+FIELDS.length+' · S'+stage;
 
   // ═══ Stage-specific Predictive Power ═══
   const stageMetrics = {
@@ -432,13 +453,12 @@ function compute(){
   document.getElementById('stageInfo').innerHTML = stageHTML;
 
   // ═══ Confidence Detail ═══
-  const ciWidth = (ciHi-ciLo)*100;
-  let confLevel, confIcon, confDetail;
-  if(ciWidth<5){confLevel='High';confIcon='✅';confDetail='Narrow confidence interval — prediction is stable.';}
-  else if(ciWidth<12){confLevel='Moderate';confIcon='ℹ️';confDetail='Moderate uncertainty — consider collecting additional fields.';}
-  else{confLevel='Low';confIcon='⚠️';confDetail='Wide confidence interval — high uncertainty. Collect more clinical data to narrow the estimate.';}
+  let confDetailHTML;
+  if(ciWidth<5){confDetailHTML='Narrow confidence interval — prediction is stable.';}
+  else if(ciWidth<12){confDetailHTML='Moderate uncertainty — consider collecting additional fields.';}
+  else{confDetailHTML='Wide confidence interval — high uncertainty. Collect more clinical data to narrow the estimate.';}
   document.getElementById('confDetail').style.display='block';
-  document.getElementById('confDetail').innerHTML = `<span class="ctitle">${confIcon} Prediction Confidence: ${confLevel}</span><br><span class="crng">95% CI: ${(ciLo*100).toFixed(1)}% – ${(ciHi*100).toFixed(1)}%</span> (width: ${ciWidth.toFixed(1)}pp)<br><span class="cnote">${confDetail} | Model C-index: ${MODEL.c_index} | Scaled Brier: 0.196</span>`;
+  document.getElementById('confDetail').innerHTML = `<span class="ctitle">${confLevel.replace(/[✅ℹ️⚠️]/,'')} Confidence Prediction</span><br><span class="crng">5-Year Risk: ${(risk5yr*100).toFixed(1)}% (95% CI: ${(ciLo5yr*100).toFixed(1)}% – ${(ciHi5yr*100).toFixed(1)}%)</span><br><span class="crng">Annual Risk: ${(annualRisk*100).toFixed(2)}%/year (95% CI: ${(ciLoAnn*100).toFixed(2)}% – ${(ciHiAnn*100).toFixed(2)}%/year)</span><br><span class="cnote">${confDetailHTML} | Model C-index: ${MODEL.c_index} | Scaled Brier: 0.196 | Mean follow-up: ${meanFU} yr</span>`;
 
   const missing = FIELDS.length - known;
   let warn='';
@@ -449,10 +469,10 @@ function compute(){
   document.getElementById('warnBox').innerHTML = warn;
 
   let rec='';
-  if(tier==='CRITICAL')rec='<div class="warn w"><strong>🔴 CRITICAL Risk:</strong> Intensive monitoring — weekly MDT review, palliative care consult, pressure ulcer prevention Qshift. <em>Stage '+stage+' | C-index '+MODEL.c_index+' | 95% CI: '+(ciLo*100).toFixed(1)+'%–'+(ciHi*100).toFixed(1)+'%</em></div>';
-  else if(tier==='HIGH')rec='<div class="warn w"><strong>🟠 HIGH Risk:</strong> Enhanced monitoring — quarterly follow-up, full cardiometabolic workup, annual urodynamics, caregiver support. <em>Stage '+stage+' | C-index '+MODEL.c_index+' | 95% CI: '+(ciLo*100).toFixed(1)+'%–'+(ciHi*100).toFixed(1)+'%</em></div>';
-  else if(tier==='MODERATE')rec='<div class="warn i"><strong>🟡 MODERATE Risk:</strong> Standard monitoring — 6-monthly HbA1c/lipid, BP log, PHQ-9 screening. <em>Stage '+stage+' | C-index '+MODEL.c_index+' | 95% CI: '+(ciLo*100).toFixed(1)+'%–'+(ciHi*100).toFixed(1)+'%</em></div>';
-  else rec='<div class="warn g"><strong>🟢 LOW Risk:</strong> Routine monitoring — annual evaluation, cardiometabolic screening Q2yr, vaccination as scheduled. <em>Stage '+stage+' | C-index '+MODEL.c_index+' | 95% CI: '+(ciLo*100).toFixed(1)+'%–'+(ciHi*100).toFixed(1)+'%</em></div>';
+  if(tier==='CRITICAL')rec='<div class="warn w"><strong>🔴 CRITICAL Risk:</strong> Intensive monitoring — weekly MDT review, palliative care consult, pressure ulcer prevention Qshift. <br><em>5-Year Risk: '+(risk5yr*100).toFixed(1)+'% | Annual: '+(annualRisk*100).toFixed(2)+'%/yr | Stage '+stage+' | C-index '+MODEL.c_index+'</em></div>';
+  else if(tier==='HIGH')rec='<div class="warn w"><strong>🟠 HIGH Risk:</strong> Enhanced monitoring — quarterly follow-up, full cardiometabolic workup, annual urodynamics. <br><em>5-Year Risk: '+(risk5yr*100).toFixed(1)+'% | Annual: '+(annualRisk*100).toFixed(2)+'%/yr | Stage '+stage+' | C-index '+MODEL.c_index+'</em></div>';
+  else if(tier==='MODERATE')rec='<div class="warn i"><strong>🟡 MODERATE Risk:</strong> Standard monitoring — 6-monthly HbA1c/lipid, BP log, PHQ-9 screening. <br><em>5-Year Risk: '+(risk5yr*100).toFixed(1)+'% | Annual: '+(annualRisk*100).toFixed(2)+'%/yr | Stage '+stage+' | C-index '+MODEL.c_index+'</em></div>';
+  else rec='<div class="warn g"><strong>🟢 LOW Risk:</strong> Routine monitoring — annual evaluation, cardiometabolic screening Q2yr. <br><em>5-Year Risk: '+(risk5yr*100).toFixed(1)+'% | Annual: '+(annualRisk*100).toFixed(2)+'%/yr | Stage '+stage+' | C-index '+MODEL.c_index+'</em></div>';
   document.getElementById('recBox').innerHTML = rec;
 }
 
