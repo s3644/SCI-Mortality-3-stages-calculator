@@ -628,8 +628,13 @@ function compute(){
       const annualRisk = 1 - Math.pow(1-riskScore, 1/meanFU);
       const riskPct = (risk5yr*100).toFixed(1);
 
-      // ═══ Monte Carlo CI ═══
-      const calibSE = 0.05, nMC = 200;
+      // ═══ Monte Carlo CI (stage-dependent uncertainty) ═══
+      // Stage 1 (AUC 0.642): wide CI, SE ≈ 0.15
+      // Stage 2 (AUC 0.840): moderate CI, SE ≈ 0.07
+      // Stage 3 (C-index 0.824): narrow CI, SE ≈ 0.05
+      const stageSE = {1:0.15, 2:0.07, 3:0.05};
+      const calibSE = stageSE[currentStage] || 0.05;
+      const nMC = 200;
       let risks = [];
       for(let i=0;i<nMC;i++){
         const perturb = logOdds + (Math.random()+Math.random()+Math.random()-1.5)*calibSE*2.5;
@@ -644,9 +649,18 @@ function compute(){
       const ciHiAnn = 1 - Math.pow(1-ciHi, 1/meanFU);
       const ciWidth = (ciHi5yr-ciLo5yr)*100;
       let confLevel, confColor;
-      if(ciWidth<5){confLevel='High ✅';confColor='#2e7d32';}
-      else if(ciWidth<12){confLevel='Mod ℹ️';confColor='#e65100';}
-      else{confLevel='Low ⚠️';confColor='#c62828';}
+      // Stage-aware confidence thresholds
+      if(currentStage===1){
+        confLevel='Very Low ⚠️';confColor='#c62828';
+      }else if(currentStage===2){
+        if(ciWidth<8){confLevel='Good ✅';confColor='#2e7d32';}
+        else if(ciWidth<18){confLevel='Mod ℹ️';confColor='#e65100';}
+        else{confLevel='Low ⚠️';confColor='#c62828';}
+      }else{
+        if(ciWidth<5){confLevel='High ✅';confColor='#2e7d32';}
+        else if(ciWidth<12){confLevel='Mod ℹ️';confColor='#e65100';}
+        else{confLevel='Low ⚠️';confColor='#c62828';}
+      }
 
       // Known count (visible only)
       const known = visibleFields.filter(f=>!na(getVal(f.k))).length;
@@ -698,14 +712,17 @@ function compute(){
 
       // ── Warn Message ──
       let warnHtml = '';
+      if(currentStage===1){
+        warnHtml += '<div class="warn-box bad"><strong>⚠️ Stage 1 (Triage) — Limited Accuracy</strong><br>AUC 0.64 means this prediction is only modestly better than a coin flip. The model sees 8 fields and imputes 77 others, inflating risk via code-9 unknown flags. <strong>Advance to Stage 2+ for clinically usable accuracy</strong> (AUC 0.84).</div>';
+      }
       if(missing===0){
-        warnHtml = '<div class="warn-box ok">✅ All fields complete — high-confidence prediction</div>';
+        warnHtml += '<div class="warn-box ok">✅ All fields complete — high-confidence prediction</div>';
       } else if(missing<=3){
-        warnHtml = `<div class="warn-box info">ℹ️ ${missing} field(s) unknown. Model accounts for missingness via dedicated unknown flags.</div>`;
+        warnHtml += `<div class="warn-box info">ℹ️ ${missing} field(s) unknown. Model accounts for missingness via dedicated unknown flags.</div>`;
       } else if(missing<=8){
-        warnHtml = `<div class="warn-box warn">⚠️ ${missing} fields unknown. The code-9 pattern (unknown → higher risk) may influence this estimate.</div>`;
+        warnHtml += `<div class="warn-box warn">⚠️ ${missing} fields unknown. The code-9 pattern (unknown → higher risk) may influence this estimate.</div>`;
       } else {
-        warnHtml = `<div class="warn-box bad">⚠️ ${missing} of ${total} fields unknown. Advance to higher cascade stage for greater accuracy.</div>`;
+        warnHtml += `<div class="warn-box bad">⚠️ ${missing} of ${total} fields unknown. Advance to higher cascade stage for greater accuracy.</div>`;
       }
       document.getElementById('warnMsg').innerHTML = warnHtml;
 
